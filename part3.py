@@ -41,6 +41,10 @@ get uploaded when you submit.
 
 # You may need to conda install requests or pip3 install requests
 import requests
+import os
+import sys
+import subprocess
+from pathlib import Path
 
 def download_file(url, filename):
     r = requests.get(url)
@@ -48,25 +52,34 @@ def download_file(url, filename):
         f.write(r.content)
 
 def clone_repo(repo_url):
-    # TODO
-    raise NotImplementedError
+    folder = Path("119-hw1")
+    if not (folder / ".git").exists():
+        subprocess.run(["git", "clone", repo_url, str(folder)], check=True)
+    return folder
+
 
 def run_script(script_path, data_path):
-    # TODO
-    raise NotImplementedError
+    # Run the cloned script from this homework folder.
+    subprocess.run([sys.executable, str(Path("119-hw1") / script_path), str(data_path)], check=True)
+
 
 def setup(repo_url, data_url, script_path):
-    # TODO
-    raise NotImplementedError
+    clone_repo(repo_url)
+    Path("data").mkdir(exist_ok=True)
+    Path("output").mkdir(exist_ok=True)
+    data_path = Path("data/test-input.txt")
+    download_file(data_url, data_path)
+    run_script(script_path, data_path)
+
 
 def q1():
-    # Call setup as described in the prompt
-    # TODO
-    # Read the file test-output.txt to a string
-    # TODO
-    # Return the integer value of the output
-    # TODO
-    raise NotImplementedError
+    setup(
+        "https://github.com/DavisPL-Teaching/119-hw1",
+        "https://raw.githubusercontent.com/DavisPL-Teaching/119-hw1/refs/heads/main/data/test-input.txt",
+        "test-script.py"
+    )
+    with open("output/test-output.txt") as f:
+        return int(f.read().strip())
 
 """
 2.
@@ -78,12 +91,16 @@ a. When might you need to use a script like setup() above in
 this scenario?
 
 === ANSWER Q2a BELOW ===
+We can use the setup script every two weeks so everyone downloads the latest data
+and runs the same steps instead of doing everything by hand.
 
 === END OF Q2a ANSWER ===
 
 Do you see an alternative to using a script like setup()?
 
 === ANSWER Q2b BELOW ===
+We could also use a scheduled GitHub Actions workflow or a shared environment
+that automatically runs the pipeline.
 
 === END OF Q2b ANSWER ===
 
@@ -125,17 +142,17 @@ any packages?
 """
 
 def setup_for_new_machine():
-    # TODO
-    raise NotImplementedError
+    # Python and pip are assumed to already be installed.
+    subprocess.run([sys.executable, "-m", "pip", "install", "pandas", "numpy",
+                    "matplotlib", "pytest", "requests"], check=True)
+    # Git is needed for cloning. On Windows, it may need a separate install.
+    if subprocess.run(["where", "git"], capture_output=True).returncode != 0:
+        subprocess.run(["winget", "install", "--id", "Git.Git", "-e",
+                        "--accept-source-agreements", "--accept-package-agreements"], check=True)
+
 
 def q3():
-    # As your answer, return a string containing
-    # the operating system name that you assumed the
-    # new machine to have.
-    # TODO
-    raise NotImplementedError
-    # os =
-    return os
+    return "Windows"
 
 """
 4. This question is open ended :)
@@ -147,6 +164,8 @@ scripts like setup() and setup_for_new_machine()
 in their day-to-day jobs?
 
 === ANSWER Q4 BELOW ===
+I would guess around 10 to 20 percent of the time, depending on the job.
+Once the setup is working, they probably spend less time writing it again.
 
 === END OF Q4 ANSWER ===
 
@@ -164,6 +183,8 @@ If you don't have a friend's machine, please speculate about
 what might happen if you tried. You can guess.
 
 === ANSWER Q5 BELOW ===
+I did not test this on another person's computer. I think the main issues might
+be missing Git, permission errors, or differences in package versions.
 
 === END OF Q5 ANSWER ===
 
@@ -221,20 +242,24 @@ with:
 """
 
 def pipeline_shell():
-    # TODO
-    raise NotImplementedError
-    # Return resulting integer
+    if os.name == "nt":
+        # Windows cmd: count CSV lines, including the header.
+        output = os.popen('find /v /c "" < "data\\population.csv"').read().strip()
+    else:
+        output = os.popen('cat data/population.csv | tail -n +2 | wc -l').read().strip()
+        return int(output)
+    return int(output) - 1
+
 
 def pipeline_pandas():
-    # TODO
-    raise NotImplementedError
-    # Return resulting integer
+    return len(pd.read_csv("data/population.csv"))
+
 
 def q6():
-    # As your answer to this part, check that both
-    # integers are the same and return one of them.
-    # TODO
-    raise NotImplementedError
+    shell_count = pipeline_shell()
+    pandas_count = pipeline_pandas()
+    assert shell_count == pandas_count, (shell_count, pandas_count)
+    return shell_count
 
 """
 Let's do a performance comparison between the two methods.
@@ -249,11 +274,13 @@ Additionally, generate a plot and save it in
 """
 
 def q7():
-    # Return a list of two floats
-    # [throughput for shell, throughput for pandas]
-    # (in rows per second)
-    # TODO
-    raise NotImplementedError
+    h = part2.ThroughputHelper()
+    rows = q6()
+    h.add_pipeline("shell", rows, pipeline_shell)
+    h.add_pipeline("pandas", rows, pipeline_pandas)
+    values = h.compare_throughput()
+    h.generate_plot("output/part3-q7.png")
+    return [float(x) for x in values]
 
 """
 8. Latency
@@ -268,17 +295,22 @@ Additionally, generate a plot and save it in
 """
 
 def q8():
-    # Return a list of two floats
-    # [latency for shell, latency for pandas]
-    # (in milliseconds)
-    # TODO
-    raise NotImplementedError
+    # The prompt allows using the full pipeline for this question.
+    h = part2.LatencyHelper()
+    h.add_pipeline("shell", pipeline_shell)
+    h.add_pipeline("pandas", pipeline_pandas)
+    values = h.compare_latency()
+    h.generate_plot("output/part3-q8.png")
+    return [float(x) for x in values]
 
 """
 9. Which method is faster?
 Comment on anything else you notice below.
 
 === ANSWER Q9 BELOW ===
+The shell command is expected to be faster here because it only counts lines,
+while Pandas has to load and parse the CSV. I would use Pandas when I need
+to do more analysis, not just count rows. The exact speed depends on the computer.
 
 === END OF Q9 ANSWER ===
 """
